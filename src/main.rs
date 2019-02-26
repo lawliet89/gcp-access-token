@@ -2,7 +2,7 @@ use yup_oauth2 as oauth2;
 
 use failure::Fail;
 use hyper::net::HttpsConnector;
-use hyper_native_tls::{NativeTlsClient};
+use hyper_native_tls::NativeTlsClient;
 use native_tls::Error as TlsError;
 use oauth2::{GetToken, ServiceAccountAccess};
 use serde_json;
@@ -18,7 +18,7 @@ pub enum Error {
     #[fail(display = "JSON Error: {}", 0)]
     JsonError(serde_json::Error),
     #[fail(display = "TLS Error: {}", 0)]
-    TlsError(String)
+    TlsError(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -48,11 +48,10 @@ fn main() -> Result<(), Error> {
         .into_owned();
     let key = oauth2::service_account_key_from_file(&key_file)?;
 
-    let client =
-        hyper::Client::with_connector(HttpsConnector::new(NativeTlsClient::new()?));
+    let client = hyper::Client::with_connector(HttpsConnector::new(NativeTlsClient::new()?));
     let mut access = ServiceAccountAccess::new(key, client);
     let token = access
-        .token(&vec!["https://www.googleapis.com/auth/pubsub"])
+        .token(&vec!["https://www.googleapis.com/auth/cloud-platform"])
         .map_err(|e| Error::GenericError(format!("Error getting token: {}", e)))?;
     println!("{}", serde_json::to_string_pretty(&token)?);
     Ok(())
