@@ -1,9 +1,9 @@
 use yup_oauth2 as oauth2;
 
 use failure::Fail;
-use hyper::net::HttpsConnector;
-use hyper_native_tls::NativeTlsClient;
-use native_tls::Error as TlsError;
+use futures::future::Future;
+use hyper::Client;
+use hyper_tls::{self, HttpsConnector};
 use oauth2::{GetToken, ServiceAccountAccess};
 use serde_json;
 
@@ -18,7 +18,7 @@ pub enum Error {
     #[fail(display = "JSON Error: {}", 0)]
     JsonError(serde_json::Error),
     #[fail(display = "TLS Error: {}", 0)]
-    TlsError(String),
+    TlsError(#[cause] hyper_tls::Error),
 }
 
 impl From<std::io::Error> for Error {
@@ -33,9 +33,9 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-impl From<TlsError> for Error {
-    fn from(err: TlsError) -> Error {
-        Error::TlsError(err.to_string())
+impl From<hyper_tls::Error> for Error {
+    fn from(err: hyper_tls::Error) -> Error {
+        Error::TlsError(err)
     }
 }
 
@@ -48,11 +48,31 @@ fn main() -> Result<(), Error> {
         .into_owned();
     let key = oauth2::service_account_key_from_file(&key_file)?;
 
-    let client = hyper::Client::with_connector(HttpsConnector::new(NativeTlsClient::new()?));
+    let https = HttpsConnector::new(1)?;
+    let client = Client::builder().keep_alive(false).build(https);
+
     let mut access = ServiceAccountAccess::new(key, client);
     let token = access
-        .token(&vec!["https://www.googleapis.com/auth/cloud-platform"])
-        .map_err(|e| Error::GenericError(format!("Error getting token: {}", e)))?;
-    println!("{}", serde_json::to_string_pretty(&token)?);
+        .token(["https://www.googleapis.com/auth/cloud-platform"].iter())
+        .map_err(|e| {
+            let e = Error::GenericError(format!("Error getting token: {}", e));
+            println!("{}", e);
+        })
+        .and_then(|token| {
+            let json = serde_json::to_string_pretty(&token);
+            match json {
+                Ok(json) => {
+                    println!("{}", json);
+                    Err(())
+                }
+                Err(e) => {
+                    println!("{:#?}", e);
+                    Ok(())
+                }
+            }
+        });
+
+    tokio::run(token);
+
     Ok(())
 }
